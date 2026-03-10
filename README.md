@@ -1,6 +1,6 @@
 # GitHub Upload Image to PR
 
-A [Claude Code](https://claude.ai/claude-code) skill that uploads local images to a GitHub PR and embeds them in the description or comments — automatically, just by asking.
+An AI agent skill that uploads local images to a GitHub PR and embeds them in the description or comments — automatically, just by asking.
 
 ## Installation
 
@@ -39,7 +39,7 @@ This approach works because GitHub's image hosting is separate from comment subm
 
 ## Requirements
 
-- [Claude Code](https://claude.ai/claude-code)
+- An AI agent that supports skills (e.g., [Claude Code](https://claude.ai/claude-code))
 - One of the following browser automation tools:
   - **Chrome DevTools MCP** (recommended — connects to your existing browser, login state preserved)
   - **Playwright MCP** (connects to an existing browser instance)
@@ -55,7 +55,7 @@ Copyright 2026 tonkotsuboy
 
 # GitHub Upload Image to PR（日本語）
 
-ローカルの画像を GitHub PR に自動でアップロードし、PR の説明欄やコメントに埋め込む [Claude Code](https://claude.ai/claude-code) スキルです。
+ローカルの画像を GitHub PR に自動でアップロードし、PR の説明欄やコメントに埋め込む AI エージェント向けスキルです。
 
 ## インストール
 
@@ -94,7 +94,7 @@ GitHub の公式 REST API には、PR の説明文やコメントに埋め込む
 
 ## 必要なもの
 
-- [Claude Code](https://claude.ai/claude-code)
+- スキルに対応した AI エージェント（例：[Claude Code](https://claude.ai/claude-code)）
 - 以下のいずれかのブラウザ自動化ツール：
   - **Chrome DevTools MCP**（推奨 — 既存のブラウザに接続し、ログイン状態を維持）
   - **Playwright MCP**（既存のブラウザインスタンスに接続）
