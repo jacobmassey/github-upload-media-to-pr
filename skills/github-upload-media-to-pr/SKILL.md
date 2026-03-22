@@ -139,11 +139,13 @@ navigate_page({ url: "https://github.com/{owner}/{repo}/pull/{number}", type: "u
 take_snapshot()
 ```
 
-### Step 3: Locate the file upload input
+### Step 3: Locate the file upload area
 
-Scroll to the bottom of the page to find the comment area, then locate the file upload input.
+Scroll to the bottom of the page to find the comment area and confirm the upload zone is present.
 
-**Important:** GitHub's file upload input (`#fc-new_comment_field`) is a **hidden element** — it will NOT appear in `agent-browser snapshot -i` output since snapshots only show visible/interactive elements. You must use JS eval to find it, and use its CSS selector (not a snapshot ref) for uploads.
+**How GitHub's upload zone works:** The visible "Paste, drop, or click to add files" button (`<file-attachment>` custom element) appears in snapshots and confirms you're in the right place. However, `agent-browser upload` only works on `<input type="file">` elements — and the actual file input (`#fc-new_comment_field`) is **hidden** inside the drop zone, so it won't appear in snapshot output.
+
+**Workflow:** Use the snapshot to confirm the drop zone button is visible, then use the hidden input's CSS selector for the actual upload.
 
 #### Using agent-browser
 
@@ -152,24 +154,22 @@ Scroll to the bottom of the page to find the comment area, then locate the file 
 agent-browser scroll down 3000
 agent-browser snapshot -i
 
-# Find the hidden file input element via JS eval
+# Look for: button "Paste, drop, or click to add files" [ref=e__]
+# This confirms the upload zone is present and you're in the right place.
+
+# Verify the hidden file input exists (it's inside the drop zone)
 agent-browser eval --stdin <<'EVALEOF'
 JSON.stringify((() => {
-  const selectors = [
-    'input[type="file"][id="fc-new_comment_field"]',
-    'input[type="file"][id*="comment"]',
-    'input[type="file"]'
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (el) return { found: true, id: el.id, selector: sel };
-  }
-  return { found: false };
+  const fa = document.querySelector('file-attachment.js-upload-markdown-image');
+  if (!fa) return { found: false, reason: 'no file-attachment element' };
+  const input = fa.querySelector('input[type="file"]');
+  if (!input) return { found: false, reason: 'no file input inside file-attachment' };
+  return { found: true, id: input.id, selector: '#' + input.id };
 })())
 EVALEOF
 ```
 
-The expected result is `{ found: true, id: "fc-new_comment_field", selector: "input[type=\"file\"][id=\"fc-new_comment_field\"]" }`. Use the `#fc-new_comment_field` CSS selector for uploads (not a snapshot `@e` ref).
+The expected result is `{ found: true, id: "fc-new_comment_field", selector: "#fc-new_comment_field" }`. Use this CSS selector for uploads — **not** the drop zone button's `@e` ref (clicking it opens an OS file picker that can't be automated, and `upload` requires an `<input type="file">`).
 
 #### Using MCP tools
 
@@ -340,7 +340,7 @@ agent-browser screenshot ./pr-verification.png
 | Textarea selector not found | GitHub UI changes occasionally — use the multi-selector JS in Step 3 |
 | Video upload seems stuck | Large videos take longer — wait up to 15s; GitHub limits most formats to 10MB |
 | agent-browser not found | `npm i -g agent-browser && agent-browser install` |
-| File input not in snapshot | The upload input is hidden — use CSS selector `"#fc-new_comment_field"` instead of `@e` refs |
+| File input not in snapshot | The upload input is hidden inside the `<file-attachment>` drop zone — use CSS selector `"#fc-new_comment_field"` instead of `@e` refs. The visible "Paste, drop, or click" button confirms the zone exists but can't be used for `upload` directly |
 | Ref not found error | Re-snapshot with `agent-browser snapshot -i` — refs invalidate on page changes |
 | No browser tools found | Use `ToolSearch` to search for available browser tools |
 | PR not found / 404 | Private repos return 404 for unauthenticated users — check login state |
