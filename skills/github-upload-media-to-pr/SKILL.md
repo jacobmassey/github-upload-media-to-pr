@@ -143,6 +143,8 @@ take_snapshot()
 
 Scroll to the bottom of the page to find the comment area, then locate the file upload input.
 
+**Important:** GitHub's file upload input (`#fc-new_comment_field`) is a **hidden element** — it will NOT appear in `agent-browser snapshot -i` output since snapshots only show visible/interactive elements. You must use JS eval to find it, and use its CSS selector (not a snapshot ref) for uploads.
+
 #### Using agent-browser
 
 ```bash
@@ -150,13 +152,12 @@ Scroll to the bottom of the page to find the comment area, then locate the file 
 agent-browser scroll down 3000
 agent-browser snapshot -i
 
-# Find the file input element
+# Find the hidden file input element via JS eval
 agent-browser eval --stdin <<'EVALEOF'
 JSON.stringify((() => {
   const selectors = [
-    'input[type="file"][id*="comment"]',
     'input[type="file"][id="fc-new_comment_field"]',
-    '#new_comment_field',
+    'input[type="file"][id*="comment"]',
     'input[type="file"]'
   ];
   for (const sel of selectors) {
@@ -167,6 +168,8 @@ JSON.stringify((() => {
 })())
 EVALEOF
 ```
+
+The expected result is `{ found: true, id: "fc-new_comment_field", selector: "input[type=\"file\"][id=\"fc-new_comment_field\"]" }`. Use the `#fc-new_comment_field` CSS selector for uploads (not a snapshot `@e` ref).
 
 #### Using MCP tools
 
@@ -195,14 +198,15 @@ For multiple files, upload them all to the same comment textarea before extracti
 #### Using agent-browser
 
 ```bash
-# Upload using the ref from snapshot
-agent-browser upload @e{ref} /absolute/path/to/media.png
+# Upload using the CSS selector (the file input is hidden, so use selector, not @ref)
+agent-browser upload "#fc-new_comment_field" /absolute/path/to/media.png
 
 # Wait for GitHub to process (images)
-agent-browser wait 3000
+agent-browser wait 5000
 
-# Wait longer for videos
-agent-browser wait 8000
+# Upload video and wait longer
+agent-browser upload "#fc-new_comment_field" /absolute/path/to/recording.webm
+agent-browser wait 10000
 ```
 
 #### Using playwright-mcp
@@ -336,6 +340,7 @@ agent-browser screenshot ./pr-verification.png
 | Textarea selector not found | GitHub UI changes occasionally — use the multi-selector JS in Step 3 |
 | Video upload seems stuck | Large videos take longer — wait up to 15s; GitHub limits most formats to 10MB |
 | agent-browser not found | `npm i -g agent-browser && agent-browser install` |
+| File input not in snapshot | The upload input is hidden — use CSS selector `"#fc-new_comment_field"` instead of `@e` refs |
 | Ref not found error | Re-snapshot with `agent-browser snapshot -i` — refs invalidate on page changes |
 | No browser tools found | Use `ToolSearch` to search for available browser tools |
 | PR not found / 404 | Private repos return 404 for unauthenticated users — check login state |
