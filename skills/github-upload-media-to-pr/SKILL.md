@@ -10,22 +10,21 @@ description: >-
   even if they don't use the word "upload" — phrases like "put the screenshot in the PR" or
   "show the recording in the PR" should trigger this skill.
   Supports images (png, jpg, gif, webp) and videos (mp4, webm, mov).
-  Requires vercel-labs/agent-browser skill as the browser automation backend.
-args: >-
-  --browser <tool>: Browser automation backend to use. Options: agent-browser (default),
-  playwright-mcp, chrome-devtools-mcp. Example: --browser playwright-mcp
+  Uses agent-browser (vercel-labs/agent-browser) for browser automation.
 dependencies:
   - vercel-labs/agent-browser
-allowed-tools: Bash(agent-browser:*), Bash(gh:*), Bash(npx:*), Bash(cp:*), Bash(file:*), ToolSearch, Read, Glob, Write
+allowed-tools: Bash(agent-browser:*), Bash(gh:*), Bash(npx:*), Bash(cp:*), Bash(file:*), Read, Glob, Write
 ---
 
 # Upload Media to PR
 
-Upload local images and videos to a GitHub PR and embed them in the description or comments using browser automation.
+Upload local images and videos to a GitHub PR and embed them in the description or comments using `agent-browser`.
+
+This skill is opinionated: it uses **`agent-browser`** (via the `vercel-labs/agent-browser` skill) as its browser automation backend. No other browser tools are needed.
 
 ## Dependencies
 
-This skill requires the **`vercel-labs/agent-browser`** skill for browser automation. If `agent-browser` is not installed, install it first:
+This skill requires **`agent-browser`**. If not installed:
 
 ```bash
 npx skills add vercel-labs/agent-browser -g -y
@@ -45,7 +44,6 @@ Since the GitHub API does not support direct media uploads, this skill uses the 
 If the user didn't specify a PR number or URL, auto-detect it:
 
 ```bash
-# Get PR number from the current branch
 gh pr view --json number,url -q '"\(.number) \(.url)"'
 ```
 
@@ -54,7 +52,6 @@ If multiple repos or branches are involved, confirm with the user which PR to ta
 Normalize the media paths to absolute paths. If a path contains special characters (e.g., Unicode narrow spaces from CleanShot X), copy the file to `/tmp/` first:
 
 ```bash
-# Handle glob-matched paths with special chars
 cp /path/to/CleanShot*keyword*.png /tmp/screenshot.png
 ```
 
@@ -64,48 +61,15 @@ Verify the file type:
 file --mime-type /path/to/media
 ```
 
-## Step 1: Select browser automation backend
-
-Parse the `--browser` argument if provided. Default is `agent-browser`.
-
-| Backend | Flag value | How it works |
-|---------|-----------|--------------|
-| **agent-browser** (default) | `agent-browser` | CLI-based, uses `vercel-labs/agent-browser` skill, login via `--profile` |
-| **Playwright MCP** | `playwright-mcp` | MCP connection (`mcp__playwright__*`), connects to existing browser |
-| **Chrome DevTools MCP** | `chrome-devtools-mcp` | MCP connection (`mcp__chrome-devtools__*`), connects to existing browser |
-
-### Detection
-
-If using MCP-based backends, verify availability:
-
-```
-ToolSearch: "browser navigate upload"
-```
-
-If using agent-browser (default), verify it's installed:
+## Step 1: Verify agent-browser is available
 
 ```bash
 agent-browser --version
 ```
 
-## Tool Compatibility Matrix
+If not found, install it: `npm i -g agent-browser && agent-browser install`
 
-| Operation | agent-browser (default) | Playwright MCP | Chrome DevTools MCP |
-|-----------|------------------------|----------------|---------------------|
-| **Navigate** | `agent-browser open {url}` | `browser_navigate` | `navigate_page` |
-| **Snapshot** | `agent-browser snapshot -i` | `browser_snapshot` | `take_snapshot` |
-| **Screenshot** | `agent-browser screenshot {path}` | `browser_take_screenshot` | `take_screenshot` |
-| **Click** | `agent-browser click {ref}` | `browser_click` (ref) | `click` (uid) |
-| **File Upload** | `agent-browser upload {ref} {path}` | `browser_file_upload` (paths) | `upload_file` (uid, filePath) |
-| **JS Eval** | `agent-browser eval --stdin` | `browser_evaluate` | `evaluate_script` |
-| **Wait** | `agent-browser wait 3000` | N/A (use sleep) | N/A (use sleep) |
-| **Login State** | `--profile ~/.agent-browser-github` | Preserved (existing browser) | Preserved (existing browser) |
-
-## Steps
-
-### Step 2: Navigate to PR page and check login state
-
-#### Using agent-browser (default)
+## Step 2: Navigate to PR page and check login state
 
 Follow the `vercel-labs/agent-browser` skill's core workflow: **navigate → snapshot → interact → re-snapshot**.
 
@@ -125,29 +89,13 @@ agent-browser snapshot -i
 3. Wait for user confirmation, then navigate back to the PR page
 4. Re-snapshot to verify login
 
-#### Using playwright-mcp
-
-```javascript
-browser_navigate({ url: "https://github.com/{owner}/{repo}/pull/{number}" })
-browser_snapshot()
-```
-
-#### Using chrome-devtools-mcp
-
-```javascript
-navigate_page({ url: "https://github.com/{owner}/{repo}/pull/{number}", type: "url" })
-take_snapshot()
-```
-
-### Step 3: Locate the file upload area
+## Step 3: Locate the file upload area
 
 Scroll to the bottom of the page to find the comment area and confirm the upload zone is present.
 
 **How GitHub's upload zone works:** The visible "Paste, drop, or click to add files" button (`<file-attachment>` custom element) appears in snapshots and confirms you're in the right place. However, `agent-browser upload` only works on `<input type="file">` elements — and the actual file input (`#fc-new_comment_field`) is **hidden** inside the drop zone, so it won't appear in snapshot output.
 
 **Workflow:** Use the snapshot to confirm the drop zone button is visible, then use the hidden input's CSS selector for the actual upload.
-
-#### Using agent-browser
 
 ```bash
 # Scroll to bottom to reveal the comment form
@@ -171,37 +119,17 @@ EVALEOF
 
 The expected result is `{ found: true, id: "fc-new_comment_field", selector: "#fc-new_comment_field" }`. Use this CSS selector for uploads — **not** the drop zone button's `@e` ref (clicking it opens an OS file picker that can't be automated, and `upload` requires an `<input type="file">`).
 
-#### Using MCP tools
+## Step 4: Upload media files one by one
 
-```javascript
-() => {
-  const selectors = [
-    'input[type="file"][id*="comment"]',
-    'input[type="file"][id="fc-new_comment_field"]',
-    '#new_comment_field',
-    'input[type="file"]'
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (el) return { found: true, id: el.id, selector: sel };
-  }
-  return { found: false };
-}
-```
-
-### Step 4: Upload media files one by one
-
-Upload each media file. Wait **3–5 seconds between uploads** for images. **Videos take longer — wait 5–10 seconds** per video upload for GitHub to process.
+Upload each media file. Wait **5 seconds** after each image upload and **10 seconds** after each video upload for GitHub to process.
 
 For multiple files, upload them all to the same comment textarea before extracting URLs.
 
-#### Using agent-browser
-
 ```bash
-# Upload using the CSS selector (the file input is hidden, so use selector, not @ref)
+# Upload image
 agent-browser upload "#fc-new_comment_field" /absolute/path/to/media.png
 
-# Wait for GitHub to process (images)
+# Wait for GitHub to process
 agent-browser wait 5000
 
 # Upload video and wait longer
@@ -209,27 +137,13 @@ agent-browser upload "#fc-new_comment_field" /absolute/path/to/recording.webm
 agent-browser wait 10000
 ```
 
-#### Using playwright-mcp
-
-```javascript
-browser_file_upload({ ref: "e{ref}", paths: ["/absolute/path/to/media.png"] })
-```
-
-#### Using chrome-devtools-mcp
-
-```javascript
-upload_file({ uid: "{uid}", filePath: "/absolute/path/to/media.png" })
-```
-
 **Important:** Always use absolute file paths.
 
-### Step 5: Retrieve uploaded media URLs
+## Step 5: Retrieve uploaded media URLs
 
-Wait **3–5 seconds** after the last upload (longer for videos), then read the textarea value. GitHub injects markdown into the textarea:
+Read the textarea value. GitHub injects markdown into the textarea:
 - **Images:** `![description](https://github.com/user-attachments/assets/...)`
 - **Videos:** `https://github.com/user-attachments/assets/...` (plain URL)
-
-#### Using agent-browser
 
 ```bash
 agent-browser eval --stdin <<'EVALEOF'
@@ -239,23 +153,11 @@ agent-browser eval --stdin <<'EVALEOF'
   return ta ? ta.value : 'textarea not found';
 })()
 EVALEOF
-```
-
-#### Using MCP tools
-
-```javascript
-() => {
-  const ta = document.getElementById('new_comment_field')
-          || document.querySelector('textarea[id*="comment"]');
-  return ta ? ta.value : 'textarea not found';
-}
 ```
 
 Extract all media URLs/markdown from the textarea value before clearing it.
 
-### Step 6: Clear the textarea (do not submit the comment)
-
-#### Using agent-browser
+## Step 6: Clear the textarea (do not submit the comment)
 
 ```bash
 agent-browser eval --stdin <<'EVALEOF'
@@ -268,18 +170,7 @@ agent-browser eval --stdin <<'EVALEOF'
 EVALEOF
 ```
 
-#### Using MCP tools
-
-```javascript
-() => {
-  const ta = document.getElementById('new_comment_field')
-           || document.querySelector('textarea[id*="comment"]');
-  if (ta) { ta.value = ""; return "cleared"; }
-  return "textarea not found";
-}
-```
-
-### Step 7: Embed media in the PR
+## Step 7: Embed media in the PR
 
 **Option A — Update PR description** (default):
 
@@ -307,7 +198,7 @@ https://github.com/user-attachments/assets/...  (video)"
 
 Use Option A by default unless the user explicitly asks for a comment, or if the PR description is already long.
 
-### Step 8: Verify the result
+## Step 8: Verify the result
 
 Reload the page and take a screenshot to confirm the media is displayed correctly:
 
@@ -322,27 +213,25 @@ agent-browser screenshot ./pr-verification.png
 - **Image sizing**: Control display size via HTML `<img>` tags: `<img width="800" alt="description" src="..." />`
 - **Video sizing**: Videos render inline on GitHub — no special sizing needed
 - **Multiple files**: Upload all media in one session to the same textarea; extract all URLs before clearing
-- **agent-browser login persistence**: Use `--profile ~/.agent-browser-github` to persist GitHub login across sessions
+- **Login persistence**: Use `--profile ~/.agent-browser-github` to persist GitHub login across sessions
 - **Recording demos**: Use `agent-browser record start ./demo.webm` to record your automation workflow (see `vercel-labs/agent-browser` video recording reference)
 - **Snapshots are essential**: Always run `agent-browser snapshot -i` after navigating or clicking — refs are invalidated on page changes
-- **Command chaining**: Chain independent agent-browser commands with `&&` for efficiency: `agent-browser open URL && agent-browser wait --load networkidle && agent-browser snapshot -i`
+- **Command chaining**: Chain independent commands with `&&` for efficiency: `agent-browser open URL && agent-browser wait --load networkidle && agent-browser snapshot -i`
 
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| Not logged in (MCP tools) | SSO screen may appear — take snapshot, find "Continue" button, click it |
-| Not logged in (agent-browser) | Use `--headed` flag, navigate to login page, ask user to log in manually |
-| Browser window not visible | For agent-browser, ensure `--headed` flag is used |
+| Not logged in | Use `--headed` flag, navigate to login page, ask user to log in manually. For SSO, take snapshot and click "Continue" button |
+| Browser window not visible | Ensure `--headed` flag is used |
 | File path with special characters | Copy file to `/tmp/` with a simple name: `cp /path/CleanShot*keyword*.png /tmp/screenshot.png` |
 | File upload fails | Ensure the file path is absolute |
-| Textarea doesn't contain URLs yet | Wait 3–5s (images) or 5–10s (videos) after upload; retry once if needed |
-| Textarea selector not found | GitHub UI changes occasionally — use the multi-selector JS in Step 3 |
+| Textarea doesn't contain URLs yet | Wait 5s (images) or 10s (videos) after upload; retry once if needed |
+| Textarea selector not found | GitHub UI changes occasionally — use the JS eval in Step 3 to find the current element |
 | Video upload seems stuck | Large videos take longer — wait up to 15s; GitHub limits most formats to 10MB |
 | agent-browser not found | `npm i -g agent-browser && agent-browser install` |
 | File input not in snapshot | The upload input is hidden inside the `<file-attachment>` drop zone — use CSS selector `"#fc-new_comment_field"` instead of `@e` refs. The visible "Paste, drop, or click" button confirms the zone exists but can't be used for `upload` directly |
 | Ref not found error | Re-snapshot with `agent-browser snapshot -i` — refs invalidate on page changes |
-| No browser tools found | Use `ToolSearch` to search for available browser tools |
 | PR not found / 404 | Private repos return 404 for unauthenticated users — check login state |
 
 ## Notes
